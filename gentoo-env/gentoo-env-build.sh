@@ -10,7 +10,7 @@ usage() {
   printf "Usage : $(basename "${0}") [options] install_dir\n"
   printf "options :\n"
   printf "  -a arch : select architecture (defaults to ${GENTOO_ARCH})\n"
-  printf "  -f      : force (re)installation"
+  printf "  -f      : force (re)installation\n"
   printf "  -v      : increase verbosity level\n"
   printf "  -h      : display this help message\n"
   exit 1
@@ -27,7 +27,7 @@ info() {
 }
 
 debug() {
-  [ ${VERBOSE} --ge 2 ] || return 0
+  [ ${VERBOSE} -ge 2 ] || return 0
   printf "[DEBUG] $@\n"
 }
 
@@ -42,8 +42,8 @@ shift $(expr ${OPTIND} - 1)
 [ -n "${1}" ] && INSTALLDIR="${1}"
 
 
-[ -n "${INSTALLDIR}" ] || usage 
-[ "$(id -un)" != "root" ] && error "this script should be run as root"
+[ -n "${INSTALLDIR}" ] || usage
+[ "$(id -un)" != "root" ] && error "this script should be run as root" 2
 [ ${VERBOSE} -ge 2 ] && exec 5>&1
 [ ${VERBOSE} -ge 1 ] && exec 6>&2
 
@@ -52,8 +52,8 @@ if ! [ -d "${INSTALLDIR}" ]; then
   install -v -d -m755 "${INSTALLDIR}" >&5 2>&6
 fi
 
-if [ -d "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc" ]; then
-  ${FORCE} || { printf "gentoo stage3 seems already installed in ${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc"; printf "remove directory or use -f option to (re)isntall"; exit 0; }
+if [ -d "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/bin" ]; then
+  ${FORCE} || { printf "gentoo stage3 seems already installed in ${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc\n"; printf "remove directory or use -f option to (re)isntall\n"; exit 0; }
   info "forcing (re)installation as ${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc already exists"
 else
   info "creating directory ${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc"
@@ -65,14 +65,18 @@ info "getting latest stage3 link for ${GENTOO_ARCH}"
 GENTOO_AUTOBUILDS="${GENTOO_MIRROR}/releases/${GENTOO_ARCH}/autobuilds"
 debug "fetching stage3 list from ${GENTOO_AUTOBUILDS}/latest-stage3.txt"
 STAGE3_LINK="${GENTOO_AUTOBUILDS}/$(curl -s "${GENTOO_AUTOBUILDS}/latest-stage3.txt" | awk "/stage3-${GENTOO_ARCH}-uclibc-vanilla/{print \$1}")"
-[ "${STAGE3_LINK}" = "${GENTOO_AUTOBUILDS}/" ] && error "failed to get latest stage3 archive link"
+[ "${STAGE3_LINK}" = "${GENTOO_AUTOBUILDS}/" ] && error "failed to get latest stage3 archive link" 4
 debug "found stage3 link : ${STAGE3_LINK}"
 
-if [ -e "${INSTALL_DIR}/$(basename "${STAGE3_LINK}")" ]; then
-  info "stage3 archive seems already downloaded to ${INSTALL_DIR}/$(basename "${STAGE3_LINK}")"
+if [ -e "${INSTALLDIR}/$(basename "${STAGE3_LINK}")" ]; then
+  info "stage3 archive seems already downloaded to ${INSTALLDIR}/$(basename "${STAGE3_LINK}")"
 else
-  info "fetching stage3 archive to ${INSTALL_DIR}/"
-  curl "${STAGE3_LINK}" -o "${INSTALL_DIR}/$(basename "${STAGE3_LINK}")" || error "failed to fetch stage3 archive"
+  info "fetching stage3 archive to ${INSTALLDIR}/"
+  curl "${STAGE3_LINK}" -o "${INSTALLDIR}/$(basename "${STAGE3_LINK}")" || error "failed to fetch stage3 archive" 8
 fi
 
+info "extracting stage3 archive to ${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"
+tar xjpf "${INSTALLDIR}/$(basename "${STAGE3_LINK}")" -C "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"
 
+
+install -v -d -m755 "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"lslinux-build/{sources,distfiles,buildscripts} >&5 2>&6
