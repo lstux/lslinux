@@ -78,5 +78,25 @@ fi
 info "extracting stage3 archive to ${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"
 tar xjpf "${INSTALLDIR}/$(basename "${STAGE3_LINK}")" -C "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"
 
+[ -d "${INSTALLDIR}/etc/portage/repos.conf" ] || install -v -d -m755 "${INSTALLDIR}/etc/portage/repos.conf"
+[ -e "${INSTALLDIR}/etc/portage/repos.conf/gentoo.conf" ] || install -v -m644 "${INSTALLDIR}/usr/share/portage/config/repos.conf" "${INSTALLDIR}/etc/portage/repos.conf/gentoo.conf"
+
+#Get latest portage snapshot
+if [ -e "${INSTALLDIR}/portage-latest.tar.xz" ]; then
+  info "latest portage archive already downloaded to ${INSTALLDIR}/portage-latest.tar.xz"
+else
+  info "fetching latest portage snapshot"
+  curl "${GENTOO_MIRROR}/snapshots/portage-latest.tar.xz" -o "${INSTALLDIR}/portage-latest.tar.xz" || error "failed to fetch latest portage snapshot" 16
+fi
+
+info "extracting latest portage to ${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/var/db/repos/gentoo"
+[ -d "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/var/db/repos" ] || install -v -d -m755 "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/var/db/repos"
+tar xJpf "${INSTALLDIR}/portage-latest.tar.xz" -C "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/var/db/repos" && \
+  mv -v "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/var/db/repos/portage" "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/var/db/repos/gentoo"
+
+diff /etc/resolv.conf "${INSTALLDIR}/etc/resolv.conf" >/dev/null 2>&1 && cp -v -L /etc/resolv.conf "${INSTALLDIR}/etc/resolv.conf"
 
 install -v -d -m755 "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"lslinux-build/{sources,distfiles,buildscripts} >&5 2>&6
+
+echo -e "export PS1=\"gentoo-uClibc-ng \${PS1}\"" >> "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/etc/bash/bashrc"
+echo -e "alias ls=\"ls --color\"" >> "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/etc/bash/bashrc"
