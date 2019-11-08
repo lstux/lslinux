@@ -44,10 +44,10 @@ kconfig_unset() {
   local conf="${1}" key="${2}" pval
   pval="$(kconfig_getraw "${conf}" "${key}")"
   if [ -n "${pval}" ]; then
-    [ ${VERBOSE} -ge 1 ] && { printf "${key} => unset"; [ ${VERBOSE} -ge 2 ] && printf " (was '${pval}')"; printf "\n"; }
+    [ ${VERBOSE} -ge 1 ] && { printf "< ${key} unsetting"; [ ${VERBOSE} -ge 2 ] && printf " (was '${pval}')"; printf "\n"; }
     sed -i "s/^${key}=.*/# ${key} is not set/" "${conf}"
   else
-    [ ${VERBOSE} -ge 2 ] && printf "${key} already unset\n"
+    [ ${VERBOSE} -ge 2 ] && printf "= ${key} already unset\n"
   fi
 }
 
@@ -57,13 +57,13 @@ kconfig_set() {
   val="${keyval##*=}"
   pval="$(kconfig_getraw "${conf}" "${key}")"
   if [ -z "${pval}" ]; then
-    [ ${VERBOSE} -ge 1 ] && { printf "${key} => setting"; [ -n "${val}" ] && printf " to '${val}'"; printf "\n"; }
+    [ ${VERBOSE} -ge 1 ] && { printf "  ${key} setting"; [ "${val}" != "${keyval}" ] && printf " to '${val}'"; printf "\n"; }
     [ "${val}" != "${keyval}" ] && val="\"${val}\"" || val="y"
     sed -i "s@^# ${key} is not set@${key}=${val}@" "${conf}"
   elif [ "${pval}" = "y" -a "${val}" = "${keyval}" ] || [ "${pval}" = "${val}" ]; then
-    [ ${VERBOSE} -ge 2 ] && { printf "${key} already set"; [ "${val}" != "${keyval}" ] && printf " to '${val}'"; printf "\n"; }
+    [ ${VERBOSE} -ge 2 ] && { printf "= ${key} already set"; [ "${val}" != "${keyval}" ] && printf " to '${val}'"; printf "\n"; }
   else
-    [ ${VERBOSE} -ge 1 ] && { printf "${key} updating to '${val}'"; [ ${VERBOSE} -ge 2 ] && printf " (was '${pval}')"; printf "\n"; }
+    [ ${VERBOSE} -ge 1 ] && { printf "> ${key} updating to '${val}'"; [ ${VERBOSE} -ge 2 ] && printf " (was '${pval}')"; printf "\n"; }
     [ "${val}" != "${keyval}" ] && val="\"${val}\"" || val="y"
     sed -i "s@^${key}=.*@${key}=${val}@" "${conf}"
   fi
