@@ -32,6 +32,10 @@ DEBUG=${DEBUG:-false}
 #check/install build dependencies
 NODEPS=false
 
+#If binaries should be stripped and how (none|debug|unneeded|all)
+STRIPMODE=unneeded
+
+
 
 
 #Start time and functions to display elapsed time
@@ -130,12 +134,44 @@ step() {
   esac
 }
 
-doconf() {
-  if [ -e "${LSL_BUILDDIR}/${SRCDIRNAME}/Makefile" ]; then
-    debug "looks like sources are already configured, remove Makefile to (re)configure"
+dokconf_set() {
+  local config="${LSL_BUILDDIR}/${SRCDIRNAME}/.config" kv="${2}" key val
+  key="${kv%%=*}"
+  val="${kv##*=}"
+  [ "${val}" != "${kv}" ] && val="\"${val}\"" || val="y"
+  if egrep -q "^${key}=" "${config}"; then
+    sed -i "s@^${key}=.*@${key}=${val}" "${config}"
   else
-    cd "${LSL_BUILDDIR}/${SRCDIRNAME}" && ./configure ${CONFIGOPTS}
+    sed -i "s@^# ${key} is not set@${key}=${val}@" "${config}"
   fi
+}
+
+dokconf_unset() {
+  local config="${LSL_BUILDDIR}/${SRCDIRNAME}/.config" key="${1}"
+  sed -i "s/^${key}=.*/# ${key} is not set/" "${config}"
+}
+
+dokconf() {
+  local config="${LSL_BUILDDIR}/${SRCDIRNAME}/.config"
+  if [ -e "${1}" ]; then
+    install -v "${1}" "${config}" && make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" oldconfig
+  else
+    make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" "${1}"
+  fi
+  shift
+  local action=set k
+  for k in "$@"; do case "${k}" in
+    set|unset) action="${k}";;
+    *)         eval dokconf_${action} \"${k}\";;
+esac; done
+}
+
+doconf() {
+  case "${1}" in
+    "") cd "${LSL_BUILDDIR}/${SRCDIRNAME}" && ./configure ${CONFIGOPTS};;
+    -*) cd "${LSL_BUILDDIR}/${SRCDIRNAME}" && ./configure "$@";;
+    *)  dokconf "$@";;
+  esac
 }
 
 dobuild() {
@@ -189,11 +225,19 @@ else
   debug "Sources already available in '${LSL_BUILDDIR}/${SRCDIRNAME}', remove folder to extract again"
 fi
 
-### Apply patches if any
+### Source ${BUILDSCRIPT} which should take care of configuring/building/installing with helper functions
+source "${BUILDSCRIPT}"
 
-### Configure sources
+### Strip binaries
+if [ "${STRIPMODE}" != "none" ]; then
+  case "${STRIPMODE}" in
+    debug|unneeded|all) STRIPOPTS="--strip-${STRIPMODE}";;
+    *)                  error "bad STIPMODE '${STRIPMODE}', supported values are none, debug, unneeded or all";;
+  esac
+fi
 
-### Build sources
+### Compress man/info files
 
-### Install to LSL_DESTDIR
+### Split package
 
+### for each package/subpackage, generate pkginfos and create archive
