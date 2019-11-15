@@ -56,7 +56,7 @@ usage() {
   printf "Usage : $(basename "${0}") [options] buildscript\n"
   printf "  Build LSL package from sources\n"
   printf "options :\n"
-  printf "  -nodeps : don't check/install build dependencies"
+  printf "  -nodeps : don't check/install build dependencies\n"
   printf "  -d      : enable debug mode (verbose++ and confirm at each step)\n"
   printf "  -v      : increase verbosity level\n"
   printf "  -h      : display this help message\n"
@@ -84,7 +84,7 @@ yesno() {
       c|C|cancel|Cancel) return 2;;
       '')                [ -n "${d}" ] && return ${d};;
     esac
-    printf "${red}**${nrm} Please answer with 'y' (yes), 'n' (no) or 'c' (cancel)..."; sleep 2; printf "\n";;
+    printf "${red}**${nrm} Please answer with 'y' (yes), 'n' (no) or 'c' (cancel)..."; sleep 2; printf "\n"
   done
 }
 
@@ -93,7 +93,7 @@ conf_check() {
   for dname in LSL_BASEDIR LSL_SRCDIR LSL_PKGDIR LSL_BUILDDIR LSL_DESTDIR LSL_LOGSDIR; do
     eval dir=\"\${${dname}}\"
     [ -d "${dir}" ] && continue
-    yesno "${dname} directory '${d}' does not exist, create it?" y || error "can't continue without an existing ${dname} directory" 2
+    yesno "${dname} directory '${dir}' does not exist, create it?" y || error "can't continue without an existing ${dname} directory" 2
     install -d -m755 "${dir}" || error "failed to create ${dname} directory" 2
   done
 
@@ -135,12 +135,12 @@ step() {
 }
 
 dokconf_set() {
-  local config="${LSL_BUILDDIR}/${SRCDIRNAME}/.config" kv="${2}" key val
+  local config="${LSL_BUILDDIR}/${SRCDIRNAME}/.config" kv="${1}" key val
   key="${kv%%=*}"
   val="${kv##*=}"
   [ "${val}" != "${kv}" ] && val="\"${val}\"" || val="y"
   if egrep -q "^${key}=" "${config}"; then
-    sed -i "s@^${key}=.*@${key}=${val}" "${config}"
+    sed -i "s@^${key}=.*@${key}=${val}@" "${config}"
   else
     sed -i "s@^# ${key} is not set@${key}=${val}@" "${config}"
   fi
@@ -172,18 +172,19 @@ doconf() {
     -*) cd "${LSL_BUILDDIR}/${SRCDIRNAME}" && ./configure "$@";;
     *)  dokconf "$@";;
   esac
+  [ $? -eq 0 ] || error "configuration failed"
 }
 
 dobuild() {
-  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" ${MAKEOPTS}    
+  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" ${MAKEOPTS} || error "build failed"
 }
 
-doinst() {
-  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" DESTDIR="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}" install
+doinstall() {
+  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" DESTDIR="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}" install || error "installation failed"
 }
 
 parse_opts "$@"; shift $(expr ${OPTIND} - 1)
-BUILDSCRIPT="$(realpath "${1}")"
+BUILDSCRIPT="$(realpath "${1}" 2>/dev/null)"
 [ -n "${BUILDSCRIPT}" ] || usage
 [ -e "${BUILDSCRIPT}" ] || usage "'${BUILDSCRIPT}', no such file"
 shift
@@ -200,8 +201,7 @@ PKG_VERSION="$(echo "${BSCRIPT}" | sed 's/^.\+_\(.\+\)_[0-9]\+$/\1/')"
 PKG_REVISION="$(echo "${BSCRIPT}" | sed 's/^.\+_.\+_\([0-9]\+\)$/\1/')"
 
 PKG_SRCLINK="$(sed -n "s/^[# ]*SRCLINK=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
-PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/" -e "s/{{version}}/${PKG_VERSION}/" -e "s/{{revision}}/${PKG_REVISION}/")"
-
+PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
 
 ### Download source package to LSL_SRCDIR
 PKG_LOCALARCH="${LSL_SRCDIR}/$(basename "${PKG_SRCLINK}")"
