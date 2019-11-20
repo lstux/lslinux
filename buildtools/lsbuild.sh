@@ -19,26 +19,43 @@ LSL_DESTDIR="${LSL_DESTDIR:-${LSL_BASEDIR}/install}"
 # Directory to store build logs
 LSL_LOGSDIR="${LSL_LOGSDIR:-${LSL_BASEDIR}/logs}"
 
+#Default gcc-c[++] options
 CFLAGS="${CFLAGS:-"-O2 -pipe"}"
 CXXFLAGS="${CXXFLAGS:-${CFLAGS}}"
+#Default options for configure script
 CONFIGOPTS="${CONFIGOPTS:-"--prefix=/usr --disable-nls"}"
+#Default options for make
 NBCPU="$(egrep "^processor" /proc/cpuinfo | wc -l)"
 MAKEOPTS="${MAKEOPTS:-"-j$((${NBCPU} + 1))"}"
+#If binaries should be stripped and how (none|debug|unneeded|all)
+STRIPMODE=unneeded
+
+## split to doc package
+DOCPKG=${DOCPKG:-false}
+DOCPKG_PATTERNS="${DOCPKG_PATTERNS:-*/man/* */info/* readme}"
+## split to dev package
+DEVPKG=${DEVPKG:-false}
+DEVPKG_PATTERNS="${DEVPKG_PATTERNS:-*/pkgconfig *.h *.a *.la}"
+## split to lib package
+LIBPKG=${LIBPKG:-false}
+LIBPKG_PATTERNS="${LIBPKG_PATTERNS:-*.so.*}"
 
 #Verbosity level [0-2]
 VERBOSE=${VERBOSE:-0}
 #Debug mode
 DEBUG=${DEBUG:-false}
+#Shell used in debug mode
+SHELL="${SHELL:-/bin/sh}"
+
 #check/install build dependencies
 NODEPS=false
 #Step to resume
 RESUME=0
 
 
-#If binaries should be stripped and how (none|debug|unneeded|all)
-STRIPMODE=unneeded
-
-
+#Define colors
+red='\e[1;31m'; grn='\e[1;32m'; ylw='\e[1;33m'; blu='\e[1;34m'
+mgt='\e[1;35m'; cyn='\e[1;36m'; wht='\e[1;37m'; nrm='\e[0m'
 
 
 #Start time and functions to display elapsed time
@@ -68,18 +85,31 @@ usage() {
   exit 1
 }
 
-message() { printf "${grn}*${nrm} $1\n"; }
-info()    { [ ${VERBOSE} -ge 1 ] || return 0; printf "${ylw}*${nrm} ${1}\n"; }
-debug()   { [ ${VERBOSE} -ge 2 ] || return 0; printf "${ylw}dbg${nrm} ${1}\n"; }
+
+msg_common() {
+  local lvl="${1}" pfx="${2}" msg="${3}" l
+  if [ -n "${3}" ]; then
+    [ ${VERBOSE} -ge ${lvl} ] || return 0
+    printf "${pfx} ${msg}\n"
+  else
+    if [ ${VERBOSE} -lt ${lvl} ]; then cat > /dev/null
+    else while read l; do
+      printf "${pfx} ${l}\n"
+    done; fi
+  fi
+}
+message() { msg_common 0 "${grn}*${nrm}" "${1}"; }
+info()    { msg_common 1 "${ylw}*${nrm}" "${1}"; }
+debug()   { msg_common 2 "${ylw}dbg${nrm}" "${1}"; }
 error()   { printf "${red}Error${nrm} : ${1}\n" >&2; [ "${2}" -gt 0 ] 2>/dev/null && exit ${2}; [ ${2} -eq 0 ] 2>/dev/null && return 0; exit 255; }
-warning() { [ ${VERBOSE} -ge 1 ] || return 0; printf "${ylw}Warning${nrm} : ${1}\n"; }
+warning() { msg_common 1 "${ylw}Warning${nrm} : " "${1}" >&2; }
 
 yesno() {
-  local prompt="${1}" default="${2}" d="" choices="(${grn}y${nrm}/${red}n${nrm}/${ylw}c${nrm})" c
+  local prompt="${1}" default="${2}" d="" choices="(${grn}y${nrm}/${ylw}n${nrm}/${cyn}s${nrm}/${red}c${nrm})" c
   case "${default}" in
-    y|Y|yes|Yes)       choices="([${grn}y${nrm}]/${red}n${nrm}/${ylw}c${nrm})"; d=0;;
-    n|N|no|No)         choices="(${grn}y${nrm}/[${red}n${nrm}]/${ylw}c${nrm})"; d=1;;
-    c|C|cancel|Cancel) choices="(${grn}y${nrm}/${red}n${nrm}/[${ylw}c${nrm}])"; d=2;;
+    y|Y|yes|Yes)       choices="([${grn}y${nrm}]/${ylw}n${nrm}/${cyn}s${nrm}/${red}c${nrm})"; d=0;;
+    n|N|no|No)         choices="(${grn}y${nrm}/[${ylw}n${nrm}]/${cyn}s${nrm}/${red}c${nrm})"; d=1;;
+    c|C|cancel|Cancel) choices="(${grn}y${nrm}/${ylw}n${nrm}/${cyn}s${nrm}/[${red}c${nrm}])"; d=2;;
   esac
   while true; do
     printf "${grn}>${nrm} ${prompt} ${choices} " >&2; read c
@@ -87,9 +117,10 @@ yesno() {
       y|Y|yes|Yes)       return 0;;
       n|N|no|No)         return 1;;
       c|C|cancel|Cancel) return 2;;
+      s|S|shell|Shell)   printf "Running shell in '$(pwd)' :\n"; ${SHELL};;
       '')                [ -n "${d}" ] && return ${d};;
     esac
-    printf "${red}**${nrm} Please answer with 'y' (yes), 'n' (no) or 'c' (cancel)..."; sleep 2; printf "\n"
+    printf "${red}**${nrm} Please answer with 'y' (yes), 'n' (no), 's' (run a shell and ask again), or 'c' (cancel)..."; sleep 2; printf "\n"
   done
 }
 
@@ -124,7 +155,7 @@ parse_opts() {
     s) case "${OPTARG}" in
          none|debug|unneeded|all) STRIPMODE="${OPTARG}";;
          *)                       usage "bad strip mode '${OPTARG}', should be one of none, debug, unneeded or all";;
-       esac
+       esac;;
     d) DEBUG=true; VERBOSE=2;;
     v) VERBOSE="$(expr ${VERBOSE} + 1)";;
     *) usage;;
@@ -138,17 +169,18 @@ step() {
   if ${DEBUG} && [ ${STEPCOUNT} -ge ${RESUME} ]; then
     yesno "${STEPCOUNT} ${steplabel}" y
     case "$?" in
-      2) printf "${red}Aborting${nrm}" >&2; exit 255;;
+      2) printf "${red}Aborting${nrm}\n" >&2; exit 255;;
       1) return 1;;
     esac
   else
     printf "${grn}>${nrm} ${STEPCOUNT} ${steplabel}\n"
-    [ ${RESUME} -ne 0 -a ${STEPCOUNT} -ge ${RESUME} ] && return 1
+    [ ${RESUME} -ne 0 -a ${STEPCOUNT} -lt ${RESUME} ] && return 1
   fi
   return 0
 }
 
 bdeps_check() {
+  local deps="${1}"
   step "checking build dependencies" || return 1
   ${NODEPS} && return 0
 }
@@ -169,9 +201,9 @@ sources_extract() {
   if ! [ -d "${srcdir}" ]; then
     extractdir="$(dirname "${srcdir}")"
     case "${archive}" in
-      *.tar.gz|*.tgz)   tar xzf "${archive}" -C "${extractdir}";;
-      *.tar.bz2|*.tbz2) tar xjf "${archive}" -C "${extractdir}";;
-      *.tar.xz|*.txz)   tar xJf "${archive}" -C "${extractdir}";;
+      *.tar.gz|*.tgz)   tar xvzf "${archive}" -C "${extractdir}";;
+      *.tar.bz2|*.tbz2) tar xvjf "${archive}" -C "${extractdir}";;
+      *.tar.xz|*.txz)   tar xvJf "${archive}" -C "${extractdir}";;
       *.zip|*.ZIP)      unzip "${archive}" -d "${extractdir}";;
       *)                error "unhandled archive format '$(basename "${archive}")'" 3
     esac
@@ -229,7 +261,7 @@ dobuild() {
 
 doinstall() {
   step "installing" || return 1
-  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" DESTDIR="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}" install || error "installation failed"
+  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" DESTDIR="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" install || error "installation failed"
 }
 
 groupcheck() {
@@ -283,6 +315,84 @@ usercheck() {
   useradd -c "added by $(basename "${0}")" -r -d "${uhome}" -g "${ugroup}" -s "${ushell}" -u "${uid}" "${uname}" || error "failed to add user '${uname}' (uid=${uid})" 8
 }
 
+binstrip() {
+  local bindir="${1}" f binsize stripsize stripopts
+  step "stripping binaries in '${bindir}'" || return 1
+  case "${STRIPMODE}" in
+    none)               return 0;;
+    debug|unneeded|all) stripopts="--strip-${STRIPMODE}";;
+    *)                  error "bad STRIPMODE '${STRIPMODE}', supported values are none, debug, unneeded or all";;
+  esac
+  if [ ${VERBOSE} -ge 1 ]; then
+    binsize="$(du -s "${bindir}" | awk '{print $1}')"
+    info "${bindir} size : ${binsize}Kbytes"
+  fi
+  find "${bindir}" -type f -executable | while read f; do
+    case "$(file "${f}")" in
+      *"not stripped"*) info "${f} stripping"; strip ${stripopts} "${f}";;
+      *"stripped"*)     info "${f} already stripped";;
+      *)                debug "${f} not strippable";;
+    esac
+  done
+  if [ ${VERBOSE} -ge 1 ]; then
+    stripsize="$(du -s "${bindir}" | awk '{print $1}')"
+    info "${bindir} size after stripping : ${stripsize}Kbytes"
+    info "  gained $((${binsize} - ${stripsize}))Kbytes"
+  fi
+  return 0
+}
+
+mancompress() {
+  local bindir="${1}" f binsize compsize
+  step "compressing man/info pages" || return 1
+  if [ ${VERBOSE} -ge 1 ]; then
+    binsize="$(du -s "${bindir}" | awk '{print $1}')"
+    info "${bindir} size : ${binsize}Kbytes"
+  fi
+  find "${bindir}" -type f -a \( -wholename "*/info/*" -o -wholename "*/man/*" -o -iname readme \) | while read f; do
+    case "${f}" in
+      *.gz|*.bz2) info "${f} already compressed";;
+      *)          info "${f} compressing"; bzip2 -9 "${f}";;
+    esac
+  done
+  if [ ${VERBOSE} -ge 1 ]; then
+    compsize="$(du -s "${bindir}" | awk '{print $1}')"
+    info "${bindir} size after compressing : ${compsize}Kbytes"
+    info "  gained $((${binsize} - ${compsize}))Kbytes"
+  fi
+  return 0
+}
+
+pkgsplit_mktree() {
+  local srcdir="${1}" dstdir="${2}" f="${3}"
+  [ -d "${dstdir}" ] || install -v -d -m755 "${dstdir}" || return 1
+  [ -d "${dstdir}/$(dirname "${f}")" ] || pkgsplit_mktree "${srcdir}" "${dstdir}" "$(dirname "${f}")"
+  install -v -d $(stat --format "-m%a -o%U -g%G" "${srcdir}/${f}") "${dstdir}/${f}"
+}
+
+pkgsplit() {
+  local bindir="${1}" splitdir="${2}" patterns="${3}" findopts="" p f
+  step "splitting to $(basename "${splitdir}")"
+  for p in ${patterns}; do
+    echo "${p}" | grep -q "/" && findopts="${findopts}-ipath '${p}' -o " \
+                              || findopts="${findopts}-iname '${p}' -o "
+  done
+  findopts="$(echo "${findopts}" | sed 's/ -o $//')"
+  eval find \"${bindir}\" ${findopts} | sed "s@^${bindir}/\?@@" | while read f; do
+    fdir="$(dirname "${f}")"
+    [ -d "${splitdir}/${fdir}" ] || pkgsplit_mktree "${bindir}" "${splitdir}" "${fdir}" || return 1
+    mv -v "${bindir}/${f}" "${splitdir}/${f}" || return 2
+  done
+}
+
+libdeps() {
+  local bindir="${1}"
+  step "listing dynamic libraries dependencies in '${bindir}'"
+  find "${bindir}" -type f -executable -exec ldd {} \; 2>/dev/null | \
+    sed -n -e '/linux-vdso.so/d' -e 's/\t\(.\+\) =>.*/\1/p' | \
+    sort -u
+}
+
 
 
 
@@ -303,6 +413,10 @@ PKG_REVISION="$(echo "${BSCRIPT}" | sed 's/^.\+_.\+_\([0-9]\+\)$/\1/')"
 PKG_SRCLINK="$(sed -n "s/^[# ]*SRCLINK=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
 PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
 
+### Check for build dependencies
+PKG_BUILDDEPS="$(sed -n "s/^[# ]*BUILD_DEPENDS=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
+bdeps_check ${PKG_BUILDDEPS}
+
 ### Download source package to LSL_SRCDIR
 PKG_LOCALARCH="${LSL_SRCDIR}/$(basename "${PKG_SRCLINK}")"
 sources_download "${PKG_SRCLINK}" "${PKG_LOCALARCH}"
@@ -318,16 +432,21 @@ source "${BUILDSCRIPT}"
 groupcheck "${ADDGROUP}"
 usercheck "${ADDUSER}"
 
+### Install files from ${ADDFILES}
+
 ### Strip binaries
-if [ "${STRIPMODE}" != "none" ]; then
-  case "${STRIPMODE}" in
-    debug|unneeded|all) STRIPOPTS="--strip-${STRIPMODE}";;
-    *)                  error "bad STRIPMODE '${STRIPMODE}', supported values are none, debug, unneeded or all";;
-  esac
-fi
+binstrip "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
 
 ### Compress man/info files
+mancompress "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
 
 ### Split package
+${DOCPKG} && pkgsplit "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" "${LSL_DESTDIR}/${PKG_NAME}-doc-${PKG_VERSION}-${PKG_REVISION}" "${DOCPKG_PATTERNS}"
+${DEVPKG} && pkgsplit "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" "${LSL_DESTDIR}/${PKG_NAME}-dev-${PKG_VERSION}-${PKG_REVISION}" "${DEVPKG_PATTERNS}"
+${LIBPKG} && pkgsplit "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" "${LSL_DESTDIR}/${PKG_NAME}-lib-${PKG_VERSION}-${PKG_REVISION}" "${LIBPKG_PATTERNS}"
+
+libdeps "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
+${DEVPKG} && libdeps "${LSL_DESTDIR}/${PKG_NAME}-dev-${PKG_VERSION}-${PKG_REVISION}"
+${LIBPKG} && libdeps "${LSL_DESTDIR}/${PKG_NAME}-lib-${PKG_VERSION}-${PKG_REVISION}"
 
 ### for each package/subpackage, generate pkginfos and create archive
