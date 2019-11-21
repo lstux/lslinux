@@ -117,7 +117,7 @@ yesno() {
       y|Y|yes|Yes)       return 0;;
       n|N|no|No)         return 1;;
       c|C|cancel|Cancel) return 2;;
-      s|S|shell|Shell)   printf "Running shell in '$(pwd)' :\n"; ${SHELL};;
+      s|S|shell|Shell)   printf "Running shell in '$(pwd)' :\n"; ${SHELL}; continue;;
       '')                [ -n "${d}" ] && return ${d};;
     esac
     printf "${red}**${nrm} Please answer with 'y' (yes), 'n' (no), 's' (run a shell and ask again), or 'c' (cancel)..."; sleep 2; printf "\n"
@@ -261,7 +261,11 @@ dobuild() {
 
 doinstall() {
   step "installing" || return 1
-  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" DESTDIR="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" install || error "installation failed"
+  local destdir="DESTDIR"
+  OPTIND=0; while getopts d: opt; do case "${opt}" in
+    d) destdir="${OPTARG}"
+  esac; done
+  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" ${destdir}="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" install || error "installation failed"
 }
 
 groupcheck() {
@@ -409,6 +413,8 @@ BSCRIPT="$(basename "${BUILDSCRIPT}" | sed 's/\.\(sh\|lsl\|lsb\)$//')"
 PKG_NAME="$(echo "${BSCRIPT}" | sed 's/^\(.\+\)_.\+_[0-9]\+$/\1/')"
 PKG_VERSION="$(echo "${BSCRIPT}" | sed 's/^.\+_\(.\+\)_[0-9]\+$/\1/')"
 PKG_REVISION="$(echo "${BSCRIPT}" | sed 's/^.\+_.\+_\([0-9]\+\)$/\1/')"
+
+export PS1="${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION} \[\033[01;31m\]\u@\h \[\033[01;34m\]\w #\[\033[00m\] "
 
 PKG_SRCLINK="$(sed -n "s/^[# ]*SRCLINK=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
 PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
