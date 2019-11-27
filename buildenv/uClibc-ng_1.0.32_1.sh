@@ -5,6 +5,6 @@ DESCRIPTION="small C library for developing embedded Linux systems"
 STRIPMODE=debug
 DEVPKG=true
 
-doconf defconfig
+doconf defconfig set KERNEL_HEADERS="/usr/include"
 dobuild
 doinstall

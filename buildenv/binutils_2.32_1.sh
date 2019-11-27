@@ -5,6 +5,6 @@ DESCRIPTION="a collection of binary tools"
 DEVPKG=true
 DOCPKG=true
 
-doconf
+doconf --prefix=/usr --disable-nls
 dobuild
 doinstall

@@ -150,7 +150,7 @@ conf_check() {
 
 parse_opts() {
   OPTIND=0
-  while getopts n:r:s:dvh opt; do case "${opt}" in
+  while getopts n:r:s:kdvh opt; do case "${opt}" in
     n) case "${OPTARG}" in
          odeps) NODEPS=true;;
          *)     usage;;
@@ -380,6 +380,13 @@ pkgsplit_mktree() {
   install -v -d $(stat --format "-m%a -o%U -g%G" "${srcdir}/${f}") "${dstdir}/${f}"
 }
 
+pkgsplit_rmvoiddirs() {
+  local dir="$(dirname "${1}")"
+  [ -n "$(ls "${dir}")" ] && return 0
+  rmdir "${dir}" || return 1
+  pkgsplit_rmvoiddirs "${dir}"
+}
+
 pkgsplit() {
   local opt desc="" deps=""
   OPTIND=0; while getopts d:D: opt; do case "${opt}" in
@@ -399,22 +406,21 @@ pkgsplit() {
   findopts="$(echo "${findopts}" | sed 's/ -o $//')"
   eval find \"${bindir}\" ${findopts} | sed "s@^${bindir}/\?@@" | while read f; do
     fdir="$(dirname "${f}")"
-    [ -d "${splitdir}/${fdir}" ] || pkgsplit_mktree "${bindir}" "${splitdir}" "${fdir}" || return 1
-    mv -v "${bindir}/${f}" "${splitdir}/${f}" || return 2
+    [ -d "${dstdir}/${fdir}" ] || pkgsplit_mktree "${bindir}" "${dstdir}" "${fdir}" || return 1
+    mv -v "${bindir}/${f}" "${dstdir}/${f}" || return 2
+    pkgsplit_rmvoiddirs "${bindir}/${f}"
   done
-  eval ${sub}_DESCRIPTION="${desc}"
-  eval ${sub}_DEPENDS="${deps}"
+  eval ${sub}_DESCRIPTION=\"${desc}\"
+  eval ${sub}_DEPENDS=\"${deps}\"
   SUBPACKAGES="${SUBPACKAGES} ${sub}"
 }
 
 libdeps() {
-  local bindir="${1}"
-  step "listing dynamic libraries dependencies in '${bindir}'"
+  local bindir="${1}" l
   find "${bindir}" -type f -executable -exec ldd {} \; 2>/dev/null | \
-    sed -n -e '/linux-vdso.so/d' -e 's/\t\(.\+\) =>.*/\1/p' | \
-    sort -u
+    sed -n -e '/linux-vdso.so/d' -e '/ld64-uClibc.so/d' -e '/libc.so/d' -e 's/\t\(.\+\) =>.*/\1/p' | \
+    sort -u | { while read l; do printf "$(basename "${l}") "; done; printf "\n"; } | sed "s/ \$//"
 }
-
 
 
 
@@ -438,47 +444,52 @@ LOGSFILE="${LSL_LOGSDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}.log"
 PKG_SRCLINK="$(sed -n "s/^[# ]*SRCLINK=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
 PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
 
+if egrep -q "^SRCDIR=" "${BUILDSCRIPT}"; then
+  SRCDIRNAME="$(sed -n "s/^[# ]*SRCDIR=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
+  SRCDIRNAME="$(echo "${SRCDIRNAME}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
+else
+  SRCDIRNAME="${PKG_NAME}-${PKG_VERSION}}"
+fi
+SOURCESDIR="${LSL_BUILDDIR}/${SRCDIRNAME}"
+INSTALLDIR="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
+
 ### Check for build dependencies
 PKG_BUILDDEPS="$(sed -n "s/^[# ]*BUILD_DEPENDS=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
-bdeps_check ${PKG_BUILDDEPS} | tee -a "${LOGSFILE}"
+bdeps_check ${PKG_BUILDDEPS}
 
 ### Download source package to LSL_SRCDIR
 PKG_LOCALARCH="${LSL_SRCDIR}/$(basename "${PKG_SRCLINK}")"
-sources_download "${PKG_SRCLINK}" "${PKG_LOCALARCH}" | tee -a "${LOGSFILE}"
+sources_download "${PKG_SRCLINK}" "${PKG_LOCALARCH}"
 
 ### Extract source package to LSL_BUILDDIR
-SRCDIRNAME="${SRCDIRNAME:-${PKG_NAME}-${PKG_VERSION}}"
-sources_extract "${PKG_LOCALARCH}" "${LSL_BUILDDIR}/${SRCDIRNAME}" | tee -a "${LOGSFILE}"
+sources_extract "${PKG_LOCALARCH}" "${SOURCESDIR}"
 
 ### Source ${BUILDSCRIPT} which should take care of configuring/building/installing with helper functions
-source "${BUILDSCRIPT}" | tee -a "${LOGSFILE}"
+source "${BUILDSCRIPT}"
 
 ### Create user/group if needed
-groupcheck "${ADDGROUP}" | tee -a "${LOGSFILE}"
-usercheck "${ADDUSER}" | tee -a "${LOGSFILE}"
+groupcheck "${ADDGROUP}"
+usercheck "${ADDUSER}"
 
 ### Install files from ${ADDFILES}
 
 ### Strip binaries
-binstrip "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" | tee -a "${LOGSFILE}"
+binstrip "${INSTALLDIR}"
 
 ### Compress man/info files
-mancompress "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" | tee -a "${LOGSFILE}"
+mancompress "${INSTALLDIR}"
 
 ### Split package
 SUBPACKAGES=""
 if ${DOCPKG}; then
   pkgsplit -d "${PKG_NAME} documentation" doc "${DOCPKG_PATTERNS}"
-fi | tee -a "${LOGSFILE}"
+fi
 if ${DEVPKG}; then
   pkgsplit -d "${PKG_NAME} developpement files" -D "$(${LIBPKG} && echo "${PKG_NAME}-lib" || echo "${PKG_NAME}")" dev "${DEVPKG_PATTERNS}"
-  libdeps "${LSL_DESTDIR}/${PKG_NAME}-dev-${PKG_VERSION}-${PKG_REVISION}"
-fi | tee -a "${LOGSFILE}"
+fi
 if ${LIBPKG}; then
   pkgsplit -d "${PKG_NAME} libraries" -D "${PKG_NAME}" lib "${LIBPKG_PATTERNS}"
-  libdeps "${LSL_DESTDIR}/${PKG_NAME}-lib-${PKG_VERSION}-${PKG_REVISION}"
-fi | tee -a "${LOGSFILE}"
-libdeps "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" | tee -a "${LOGSFILE}"
+fi
 
 ### for each package/subpackage, generate pkginfos and create archive
 for sub in ${SUBPACKAGES}; do
@@ -486,7 +497,7 @@ for sub in ${SUBPACKAGES}; do
   eval subdepends=\"\${${sub}_DEPENDS}\"
   step "creating ${PKG_NAME}-${sub} subpackage" || continue
   {
-    cd "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}" && tar cvJf - ./*
+    cd "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}" && tar cvjf - ./*
     cat << EOF
 
 ### LSL PACKAGE INFOS ###
@@ -495,30 +506,32 @@ VERSION=${PKG_VERSION}
 REVISION=${PKG_REVISION}
 DESCRIPTION="${subdescription}"
 DEPENDS="${subdepends}"
+DYNDEPS="$(libdeps "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}")"
 HOMEPAGE="${HOMEPAGE}"
-SRCLINK="${SRCLINK}"
-SIZE="$(du -sk "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}-${sub}" | awk '{print $1}')"
+SRCLINK="$( echo "${SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
+SIZE="$(du -sk "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}" | awk '{print $1}')"
 EOF
-  } > "${LSL_PKGDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}.txz"
-done | tee -a "${LOGSFILE}"
+  } > "${LSL_PKGDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}.tbz2"
+done
 
-step "creating ${PKG_NAME} package" && {
+step "creating ${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION} package" && {
   {
-    cd "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" && tar cvJf - ./*
+    cd "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" && tar cvjf - ./*
     cat << EOF
 
 ### LSL PACKAGE INFOS ###
-NAME=${PKG_NAME}-${sub}
+NAME=${PKG_NAME}
 VERSION=${PKG_VERSION}
 REVISION=${PKG_REVISION}
 DESCRIPTION="${DESCRIPTION}"
 DEPENDS="${DEPENDS}"
+DYNDEPS="$(libdeps "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}")"
 HOMEPAGE="${HOMEPAGE}"
-SRCLINK="${SRCLINK}"
+SRCLINK="$( echo "${SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
 SIZE="$(du -sk "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" | awk '{print $1}')"
 EOF
-  } > "${LSL_PKGDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}.txz"
-} | tee -a "${LOGSFILE}"
+  } > "${LSL_PKGDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}.tbz2"
+}
 
 
 ### Remove installdirs and builddir if requested
