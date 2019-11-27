@@ -219,7 +219,7 @@ sources_extract() {
 }
 
 dokconf_set() {
-  local config="${LSL_BUILDDIR}/${SRCDIRNAME}/.config" kv="${1}" key val
+  local config="${SOURCESDIR}/.config" kv="${1}" key val
   key="${kv%%=*}"
   val="${kv##*=}"
   [ "${val}" != "${kv}" ] && val="\"${val}\"" || val="y"
@@ -231,30 +231,31 @@ dokconf_set() {
 }
 
 dokconf_unset() {
-  local config="${LSL_BUILDDIR}/${SRCDIRNAME}/.config" key="${1}"
+  local config="${SOURCESDIR}/.config" key="${1}"
   sed -i "s/^${key}=.*/# ${key} is not set/" "${config}"
 }
 
 dokconf() {
-  local config="${LSL_BUILDDIR}/${SRCDIRNAME}/.config"
+  local config="${SOURCESDIR}/.config"
   if [ -e "${1}" ]; then
-    install -v "${1}" "${config}" && make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" oldconfig
+    install -v "${1}" "${config}"
   else
-    make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" "${1}"
+    make -C "${SOURCESDIR}" "${1}"
   fi
   shift
   local action=set k
   for k in "$@"; do case "${k}" in
     set|unset) action="${k}";;
     *)         eval dokconf_${action} \"${k}\";;
-esac; done
+  esac; done
+  make -C "${SOURCESDIR}" oldconfig
 }
 
 doconf() {
   step "configuring sources" || return 1
   case "${1}" in
-    "") cd "${LSL_BUILDDIR}/${SRCDIRNAME}" && ./configure ${CONFIGOPTS};;
-    -*) cd "${LSL_BUILDDIR}/${SRCDIRNAME}" && ./configure "$@";;
+    "") cd "${SOURCESDIR}" && ./configure ${CONFIGOPTS};;
+    -*) cd "${SOURCESDIR}" && ./configure "$@";;
     *)  dokconf "$@";;
   esac
   [ $? -eq 0 ] || error "configuration failed"
@@ -262,7 +263,7 @@ doconf() {
 
 dobuild() {
   step "building sources" || return 1
-  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" ${MAKEOPTS} || error "build failed"
+  make -C "${SOURCESDIR}" ${MAKEOPTS} || error "build failed"
 }
 
 doinstall() {
@@ -271,7 +272,7 @@ doinstall() {
   OPTIND=0; while getopts d: opt; do case "${opt}" in
     d) destdir="${OPTARG}"
   esac; done
-  make -C "${LSL_BUILDDIR}/${SRCDIRNAME}" ${destdir}="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" install || error "installation failed"
+  make -C "${SOURCESDIR}" ${destdir}="${INSTALLDIR}" install || error "installation failed"
 }
 
 groupcheck() {
@@ -415,6 +416,20 @@ pkgsplit() {
   SUBPACKAGES="${SUBPACKAGES} ${sub}"
 }
 
+addfiles() {
+  local list="${1}" dstdir="${2}" basedir f mode owner group
+  [ -e "${list}" ] || return 0
+  step "adding files from ${list}" || return 1
+  basedir="$(dirname "${list}")/$(basename "${list}" .list)"
+  while read f mode owner group; do
+    if [ -d "${basedir}/${f}" ]; then
+      install -v -d -m${mode} -o${owner} -g${group} "${dstdir}/${f}"
+    else
+      install -v -m${mode} -o${owner} -g${group} "${basedir}/${f}" "${dstdir}/${f}"
+    fi
+  done < "${list}"
+}
+
 libdeps() {
   local bindir="${1}" l
   find "${bindir}" -type f -executable -exec ldd {} \; 2>/dev/null | \
@@ -441,21 +456,25 @@ PKG_REVISION="$(echo "${BSCRIPT}" | sed 's/^.\+_.\+_\([0-9]\+\)$/\1/')"
 export PS1="${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION} \[\033[01;31m\]\u@\h \[\033[01;34m\]\w #\[\033[00m\] "
 LOGSFILE="${LSL_LOGSDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}.log"
 
-PKG_SRCLINK="$(sed -n "s/^[# ]*SRCLINK=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
-PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
+eval $(sed -n -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g" -e '/^[A-Z0-9a-z]\+=/p' "${BUILDSCRIPT}")
+PKG_SRCLINK="${SRCLINK}"
+[-n "${SRCDIR}" ] && SRCDIRNAME="${SRCDIR}" || SRCDIRNAME="$(basename "${PKG_SRCLINK}" | sed -e 's/\.\(zip\|tar\.gz\|tgz\|tar\.bz2\|tbz2\|tar\.xz\|txz\)$//i')"
 
-if egrep -q "^SRCDIR=" "${BUILDSCRIPT}"; then
-  SRCDIRNAME="$(sed -n "s/^[# ]*SRCDIR=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
-  SRCDIRNAME="$(echo "${SRCDIRNAME}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
-else
-  SRCDIRNAME="${PKG_NAME}-${PKG_VERSION}}"
-fi
+#PKG_SRCLINK="$(sed -n "s/^[# ]*SRCLINK=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
+#PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
+#if egrep -q "^SRCDIR=" "${BUILDSCRIPT}"; then
+#  SRCDIRNAME="$(sed -n "s/^[# ]*SRCDIR=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
+#  SRCDIRNAME="$(echo "${SRCDIRNAME}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
+#else
+#  SRCDIRNAME="$(basename "${PKG_SRCLINK}" | sed -e 's/\.\(zip\|tar\.gz\|tgz\|tar\.bz2\|tbz2\|tar\.xz\|txz\)$//i')"
+#fi
+
 SOURCESDIR="${LSL_BUILDDIR}/${SRCDIRNAME}"
 INSTALLDIR="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
 
 ### Check for build dependencies
-PKG_BUILDDEPS="$(sed -n "s/^[# ]*BUILD_DEPENDS=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
-bdeps_check ${PKG_BUILDDEPS}
+#PKG_BUILDDEPS="$(sed -n "s/^[# ]*BUILD_DEPENDS=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
+bdeps_check ${BUILD_DEPENDS}
 
 ### Download source package to LSL_SRCDIR
 PKG_LOCALARCH="${LSL_SRCDIR}/$(basename "${PKG_SRCLINK}")"
@@ -464,14 +483,15 @@ sources_download "${PKG_SRCLINK}" "${PKG_LOCALARCH}"
 ### Extract source package to LSL_BUILDDIR
 sources_extract "${PKG_LOCALARCH}" "${SOURCESDIR}"
 
-### Source ${BUILDSCRIPT} which should take care of configuring/building/installing with helper functions
-source "${BUILDSCRIPT}"
-
 ### Create user/group if needed
 groupcheck "${ADDGROUP}"
 usercheck "${ADDUSER}"
 
+### Source ${BUILDSCRIPT} which should take care of configuring/building/installing with helper functions
+source "${BUILDSCRIPT}"
+
 ### Install files from ${ADDFILES}
+addfiles "$(dirname "${BUILDSCRIPT}")/added_files.list" "${INSTALLDIR}"
 
 ### Strip binaries
 binstrip "${INSTALLDIR}"
@@ -508,9 +528,12 @@ DESCRIPTION="${subdescription}"
 DEPENDS="${subdepends}"
 DYNDEPS="$(libdeps "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}")"
 HOMEPAGE="${HOMEPAGE}"
-SRCLINK="$( echo "${SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
+SRCLINK="$(echo "${SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
 SIZE="$(du -sk "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}" | awk '{print $1}')"
 EOF
+    for f in preinst postinst prerm postrm; do
+      type ${sub}_${f} 2>/dev/null | grep -v "${sub}_${f} is a function"
+    done
   } > "${LSL_PKGDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}.tbz2"
 done
 
@@ -529,7 +552,11 @@ DYNDEPS="$(libdeps "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}")"
 HOMEPAGE="${HOMEPAGE}"
 SRCLINK="$( echo "${SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
 SIZE="$(du -sk "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}" | awk '{print $1}')"
+
 EOF
+    for f in preinst postinst prerm postrm; do
+      type ${f} 2>/dev/null | grep -v "${f} is a function"
+    done
   } > "${LSL_PKGDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}.tbz2"
 }
 
@@ -537,4 +564,4 @@ EOF
 ### Remove installdirs and builddir if requested
 for sub in ${SUBPACKAGES}; do rm -rf "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}"; done
 rm -rf "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
-${CLEANBUILD} && rm -rf "${LSL_BUILDDIR}/${SRCDIRNAME}"
+${CLEANBUILD} && rm -rf "${SOURCESDIR}"

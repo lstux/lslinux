@@ -4,6 +4,11 @@
 # {{pkgname}}, {{version}} and {{revision}} will be replaced with corresponding values
 SRCLINK=https://{{pkgname}}.org/downloads/{{pkgname}}-{{version}}.tar.xz
 
+# Sources archive is supposed to contain a directory named as the archive minus extension (eg: {{pkgname}}-{{version}})
+# if directory name is different, you can specify it there or set to 'create' if there is no directory and sources
+# files are directlky stored in archive
+#SRCDIR="{{pkgname}}_{{version}}"
+
 # Homepage of the project
 HOMEPAGE=https://mypackage.org
 
@@ -41,7 +46,9 @@ DESCRIPTION="My awsome package for LsLinux"
 #   you may specify other options with 'doconf --my-option=my/value'
 # it also supports "kernel style" configuration with 'doconf keyword [set key=value [key2=value2 ...]] [unset key3 [key4]]
 #   this will run "make keyword" in extracted sources directory and set/unset specified keys in .config file
-# finally if none of these options fits your needs, just run your own commands, sources are available in ${}
+#   if keyword is a file, it will be copied in extracted sources directory as .config, and once specified set/unset are done
+#   'make oldconfig' will be run
+# finally if none of these options fits your needs, just run your own commands, sources are available in ${SOURCESDIR}
 doconf
 
 # To build sources, you may use 'dobuild' builtin
@@ -49,10 +56,16 @@ doconf
 dobuild
 
 # To install sources, you may use 'doinstall' builtin
-# default behaviour is to run 'make DESTDIR=${} install' in extracted sources directrory
-# you may specify another keyword like 'doinstall -d CONFIG_PREFIX' which will run 'make CONFIG_PREFIX=${} install'
-# you may also use your own commands, just install files to ${}
+# default behaviour is to run 'make DESTDIR=${INSTALLDIR} install' in extracted sources directrory
+# you may specify another keyword like 'doinstall -d CONFIG_PREFIX' which will run 'make CONFIG_PREFIX=${INSTALLDIR} install'
+# you may also use your own commands, just install files to ${INSTALLDIR}
 doinstall
+
+# To split to a subpackage that is not dev/lib/doc, you can use pkgsplit function :
+# pkgsplit [-d "subpackage description"] [-D "subpackage dependencies"] package_suffix "matching patterns"
+# default description is "{{pkgname}} package_suffix subpackage", no dependencies
+#pkgsplit -d "mypackage modules" -D "mypackage" modules "*/mods/*"
+
 
 
 # Pre/Post(un)installation functions may be defined here, they will be run by lspkg at (un)installation of package
@@ -68,4 +81,10 @@ doinstall
 #}
 #postrm() {
 #  dosome_otherchecks run once package is removed
+#}
+
+
+# You may define pre/post(un)install functions for subpackages like this :
+#pkgsuffix_preinst() {
+#  dosome_checks before installing pkgname-pkgsuffix
 #}
