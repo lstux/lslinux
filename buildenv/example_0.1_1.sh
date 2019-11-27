@@ -21,6 +21,10 @@ DESCRIPTION="My awsome package for LsLinux"
 # List of packages needed to compile
 #BUILD_DEPENDS="somepackage-dev anotherpackage-dev"
 
+# Strippping mode for binary files (strip --strip-${STRIPMODE})
+# it may be one of none,debug,[unneeded],all
+#STRIPMODE=debug
+
 # If a particular user/group is needed, you may specify them like this
 #ADDGROUP="groupname:gid"
 #ADDUSER="username:uid:primarygroup[:homedir=/home/username[:shell=/sbin/nologin]]"
