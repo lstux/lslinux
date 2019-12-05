@@ -1,0 +1,14 @@
+export PATH="/bin:/usr/bin"
+export EDITOR="${EDITOR:-/usr/bin/vi}"
+export UID="$(id -u)"
+
+if [ ${UID} -eq 0 ]; then
+    export PATH="/sbin:/usr/sbin:${PATH}"
+    export PS1='\[\033[01;31m\]\u@\h \[\033[01;34m\]\w #\[\033[00m\] '
+else
+    export PS1='\[\033[01;32m\]\u@\h \[\033[01;34m\]\w $\[\033[00m\] '
+fi
+
+if [ -d "/etc/profile.d" ]; then
+  for f in /etc/profile.d/*; do [ -r "${f}" ] && source "${f}"; done
+fi

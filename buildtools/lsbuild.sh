@@ -236,7 +236,7 @@ dokconf_unset() {
 }
 
 dokconf() {
-  local config="${SOURCESDIR}/.config"
+  local config="${SOURCESDIR}/.config" target="silentoldconfig"
   if [ -e "${1}" ]; then
     install -v "${1}" "${config}"
   else
@@ -248,7 +248,8 @@ dokconf() {
     set|unset) action="${k}";;
     *)         eval dokconf_${action} \"${k}\";;
   esac; done
-  make -C "${SOURCESDIR}" oldconfig
+  ${DEBUG} && target="oldconfig"
+  make -C "${SOURCESDIR}" ${target}
 }
 
 doconf() {
@@ -328,12 +329,12 @@ usercheck() {
 
 binstrip() {
   local bindir="${1}" f binsize stripsize stripopts
-  step "stripping binaries in '${bindir}'" || return 1
   case "${STRIPMODE}" in
     none)               return 0;;
     debug|unneeded|all) stripopts="--strip-${STRIPMODE}";;
     *)                  error "bad STRIPMODE '${STRIPMODE}', supported values are none, debug, unneeded or all";;
   esac
+  step "stripping binaries in '${bindir}' (${STRIPMODE})" || return 1
   if [ ${VERBOSE} -ge 1 ]; then
     binsize="$(du -s "${bindir}" | awk '{print $1}')"
     info "${bindir} size : ${binsize}Kbytes"
@@ -458,7 +459,7 @@ LOGSFILE="${LSL_LOGSDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}.log"
 
 eval $(sed -n -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g" -e '/^[A-Z0-9a-z]\+=/p' "${BUILDSCRIPT}")
 PKG_SRCLINK="${SRCLINK}"
-[-n "${SRCDIR}" ] && SRCDIRNAME="${SRCDIR}" || SRCDIRNAME="$(basename "${PKG_SRCLINK}" | sed -e 's/\.\(zip\|tar\.gz\|tgz\|tar\.bz2\|tbz2\|tar\.xz\|txz\)$//i')"
+[ -n "${SRCDIR}" ] && SRCDIRNAME="${SRCDIR}" || SRCDIRNAME="$(basename "${PKG_SRCLINK}" | sed -e 's/\.\(zip\|tar\.gz\|tgz\|tar\.bz2\|tbz2\|tar\.xz\|txz\)$//i')"
 
 #PKG_SRCLINK="$(sed -n "s/^[# ]*SRCLINK=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
 #PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
