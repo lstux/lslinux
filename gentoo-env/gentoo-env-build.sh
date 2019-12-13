@@ -8,6 +8,7 @@ FORCE=false
 usage() {
   exec >&2
   printf "Usage : $(basename "${0}") [options] install_dir\n"
+  printf "  Install a Gentoo uClibc-ng root to install_dir/gentoo-\${arch}-uclibc\n"
   printf "options :\n"
   printf "  -a arch : select architecture (defaults to ${GENTOO_ARCH})\n"
   printf "  -f      : force (re)installation\n"
@@ -44,6 +45,7 @@ shift $(expr ${OPTIND} - 1)
 
 [ -n "${INSTALLDIR}" ] || usage
 [ "$(id -un)" != "root" ] && error "this script should be run as root" 2
+exec 5>/dev/null 6>/dev/null
 [ ${VERBOSE} -ge 2 ] && exec 5>&1
 [ ${VERBOSE} -ge 1 ] && exec 6>&2
 
@@ -78,8 +80,9 @@ fi
 info "extracting stage3 archive to ${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"
 tar xjpf "${INSTALLDIR}/$(basename "${STAGE3_LINK}")" -C "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"
 
-[ -d "${INSTALLDIR}/etc/portage/repos.conf" ] || install -v -d -m755 "${INSTALLDIR}/etc/portage/repos.conf"
-[ -e "${INSTALLDIR}/etc/portage/repos.conf/gentoo.conf" ] || install -v -m644 "${INSTALLDIR}/usr/share/portage/config/repos.conf" "${INSTALLDIR}/etc/portage/repos.conf/gentoo.conf"
+[ -d "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/etc/portage/repos.conf" ] || install -v -d -m755 "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/etc/portage/repos.conf"
+[ -e "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/etc/portage/repos.conf/gentoo.conf" ] || \
+  install -v -m644 "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/usr/share/portage/config/repos.conf" "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/etc/portage/repos.conf/gentoo.conf"
 
 #Get latest portage snapshot
 if [ -e "${INSTALLDIR}/portage-latest.tar.xz" ]; then
