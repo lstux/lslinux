@@ -7,6 +7,11 @@ PKG_SRCLINK=
 CONFFILES="/etc/lsbuild.conf ~/.lsbuild.conf ./lsbuild.conf"
 for conf in ${CONFFILES}; do [ -e "${conf}" ] && source "${conf}"; done
 
+#This should REALLY be set in lsbuild.conf...
+MAINTAINER="${MAINTAINER:-maintainer@lslinux.org}"
+#This should REALLY be set in buildscript...
+SECTION="${SECTION:-others}"
+
 LSL_BASEDIR="${LSL_BASEDIR:-/var/lsbuild}"
 #Directory to store source packages
 LSL_SRCDIR="${LSL_SRCDIR:-${LSL_BASEDIR}/sources}"
@@ -39,6 +44,9 @@ DEVPKG_PATTERNS="${DEVPKG_PATTERNS:-*/pkgconfig *.h *.a *.la}"
 ## split to lib package
 LIBPKG=${LIBPKG:-false}
 LIBPKG_PATTERNS="${LIBPKG_PATTERNS:-*.so.*}"
+## split to i18n package
+I18NPKG="${I18NPKG:-false}"
+I18NPKG_PATTERNS="${I18NPKG_PATTERNS:-*/locale *.mo}"
 
 #Verbosity level [0-2]
 VERBOSE=${VERBOSE:-0}
@@ -438,6 +446,55 @@ libdeps() {
     sort -u | { while read l; do printf "$(basename "${l}") "; done; printf "\n"; } | sed "s/ \$//"
 }
 
+pkgcreate() {
+  local subpackage="${1}" pkgname pkgdesc pkgdeps
+  if [ -n "${subpackage}" ]; then
+    pkgname="${PKG_NAME}-${sub}"
+    eval pkgdesc=\"\${${sub}_DESCRIPTION}\"
+    eval pkgdeps=\"\${${sub}_DEPENDS}\"
+  else
+    pkgname="${PKG_NAME}"
+    pkgdesc="${DESCRIPTION}"
+    pkgdeps="${DEPENDS}"
+  fi
+
+  ##TODO : Check following variables for old naska compatibility
+  # LSLRELEASE MIRROR FILES CONFFILES
+
+  step "creating ${pkgname} package" || continue
+  {
+    cd "${LSL_DESTDIR}/${pkgname}-${PKG_VERSION}-${PKG_REVISION}" && tar cvjf - ./*
+    cat << EOF
+
+### LSL PACKAGE INFOS ###
+PACKAGE=${pkgname}
+SECTION="${SECTION}"
+LICENSE="${LICENSE}"
+VERSION=${PKG_VERSION}
+REVISION=${PKG_REVISION}
+DESCRIPTION="${pkgdesc}"
+DEPENDS="${pkgdeps}"
+DYNDEPS="$(libdeps "${LSL_DESTDIR}/${pkgname}-${PKG_VERSION}-${PKG_REVISION}")"
+HOMEPAGE="${HOMEPAGE}"
+MAINTAINER="${MAINTAINER}"
+SRCLINK="$(echo "${SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
+SIZE="$(du -sk "${LSL_DESTDIR}/${pkgname}-${PKG_VERSION}-${PKG_REVISION}" | awk '{print $1}')"
+BUILD=$(date -u "+%Y%m%d-%H:%M")
+NEEDUSER="${ADDUSER}"
+NEEDGROUP="${NEEDGROUP}"
+MD5=
+SHA256=
+EOF
+    for f in preinst postinst prerm postrm; do
+      if [ -n "${subpackage}" ]; then type ${sub}_${f} 2>/dev/null | grep -v "${sub}_${f} is a function"
+      else type ${f} 2>/dev/null | grep -v "${f} is a function"; fi
+    done
+  } > "${LSL_PKGDIR}/${pkgname}-${PKG_VERSION}-${PKG_REVISION}.tbz2"
+  local md5sum="$(egrep -v "^(MD5|SHA256)=" "${LSL_PKGDIR}/${pkgname}-${PKG_VERSION}-${PKG_REVISION}.tbz2" | md5sum | sed 's/ -$//')"
+  local sha256sum="$(egrep -v "^(MD5|SHA256)=" "${LSL_PKGDIR}/${pkgname}-${PKG_VERSION}-${PKG_REVISION}.tbz2" | sha256sum | sed 's/ -$//')"
+  sed -i -e "s/^MD5=.*/MD5=${md5sum}/" -e "s/^SHA256=.*/SHA256=${sha256sum}/" "${LSL_PKGDIR}/${pkgname}-${PKG_VERSION}-${PKG_REVISION}.tbz2"
+}
+
 
 
 parse_opts "$@"; shift $(expr ${OPTIND} - 1)
@@ -460,15 +517,6 @@ LOGSFILE="${LSL_LOGSDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}.log"
 eval $(sed -n -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g" -e '/^[A-Z0-9a-z]\+=/p' "${BUILDSCRIPT}")
 PKG_SRCLINK="${SRCLINK}"
 [ -n "${SRCDIR}" ] && SRCDIRNAME="${SRCDIR}" || SRCDIRNAME="$(basename "${PKG_SRCLINK}" | sed -e 's/\.\(zip\|tar\.gz\|tgz\|tar\.bz2\|tbz2\|tar\.xz\|txz\)$//i')"
-
-#PKG_SRCLINK="$(sed -n "s/^[# ]*SRCLINK=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
-#PKG_SRCLINK="$(echo "${PKG_SRCLINK}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
-#if egrep -q "^SRCDIR=" "${BUILDSCRIPT}"; then
-#  SRCDIRNAME="$(sed -n "s/^[# ]*SRCDIR=[\"']\?\([^\"']\+\)[\"']\? *\$/\1/p" "${BUILDSCRIPT}")"
-#  SRCDIRNAME="$(echo "${SRCDIRNAME}" | sed -e "s/{{pkgname}}/${PKG_NAME}/g" -e "s/{{version}}/${PKG_VERSION}/g" -e "s/{{revision}}/${PKG_REVISION}/g")"
-#else
-#  SRCDIRNAME="$(basename "${PKG_SRCLINK}" | sed -e 's/\.\(zip\|tar\.gz\|tgz\|tar\.bz2\|tbz2\|tar\.xz\|txz\)$//i')"
-#fi
 
 SOURCESDIR="${LSL_BUILDDIR}/${SRCDIRNAME}"
 INSTALLDIR="${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
@@ -511,6 +559,21 @@ fi
 if ${LIBPKG}; then
   pkgsplit -d "${PKG_NAME} libraries" -D "${PKG_NAME}" lib "${LIBPKG_PATTERNS}"
 fi
+if ${I18NPKG}; then
+  pkgsplit -d "${PKG_NAME} internationalization files" -D "${PKG_NAME}" i18n "${I18NPKG_PATTERNS}"
+fi
+
+### Create packages archives
+for sub in ${SUBPACKAGES}; do pkgcreate "${sub}"; done
+pkgcreate "${sub}"
+
+### Remove installdirs and builddir if requested
+for sub in ${SUBPACKAGES}; do rm -rf "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}"; done
+rm -rf "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
+${CLEANBUILD} && rm -rf "${SOURCESDIR}"
+
+exit $?
+
 
 ### for each package/subpackage, generate pkginfos and create archive
 for sub in ${SUBPACKAGES}; do
@@ -560,9 +623,3 @@ EOF
     done
   } > "${LSL_PKGDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}.tbz2"
 }
-
-
-### Remove installdirs and builddir if requested
-for sub in ${SUBPACKAGES}; do rm -rf "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}"; done
-rm -rf "${LSL_DESTDIR}/${PKG_NAME}-${PKG_VERSION}-${PKG_REVISION}"
-${CLEANBUILD} && rm -rf "${SOURCESDIR}"

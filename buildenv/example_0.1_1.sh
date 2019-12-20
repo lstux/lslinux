@@ -15,6 +15,12 @@ HOMEPAGE=https://mypackage.org
 # A small description of the package
 DESCRIPTION="My awsome package for LsLinux"
 
+# Section
+SECTION=""
+
+# License
+LICENSE=""
+
 # List of packages needed to correctly run this one
 #DEPENDS="somepackage anotherpackage"
 
@@ -42,7 +48,12 @@ DESCRIPTION="My awsome package for LsLinux"
 # If you want to split to pkgname-dev package containing developpement files
 #DEVPKG=true
 # You may redefine the matching patterns
-#DEVPKG_PATTERNS=""
+#DEVPKG_PATTERNS="*/pkgconfig *.h *.a *.la"
+
+# If you want to split to pkgname-i18n package containing internationalization files
+#I18NPKG=true
+# You may redefine the matching patterns
+#I18NPKG_PATTERNS="*/locale *.mo"
 
 
 # To configure sources, you may use 'doconf' builtin
