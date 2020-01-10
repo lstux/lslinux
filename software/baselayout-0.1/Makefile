@@ -1,10 +1,14 @@
+build:
+	@echo "Nothing to build, run 'make [DESTDIR=/] install' to install"
+
 install: directories files devices
 
 directories:
 	[ -d "$(DESTDIR)/" ] || install -v -d -m755 -oroot -groot "$(DESTDIR)/"
-	for d in boot dev etc etc/profile.d home proc sys var var/log var/run; do [ -d "$(DESTDIR)/$$d" ] || install -v -d -m755 -oroot -groot "$(DESTDIR)/$$d"; done
-	for d in tmp var/tmp; do [ -d "$(DESTDIR)/${d}" ] || install -v -d -m777 -oroot -groot "$(DESTDIR)/$$d"; done
+	for d in boot dev etc etc/profile.d home proc run sys var var/log; do [ -d "$(DESTDIR)/$$d" ] || install -v -d -m755 -oroot -groot "$(DESTDIR)/$$d"; done
+	[ -d "$(DESTDIR)/tmp" ] || install -v -d -m777 -oroot -groot "$(DESTDIR)/tmp"
 	[ -d "$(DESTDIR)/root" ] || install -v -d -m750 -oroot -groot "$(DESTDIR)/root"
+	for l in tmp run; do [ -L "${DESTDIR}/var/$$l" ] || ln -v -s ../$$l "${DESTDIR}/var/$$l"; done
 
 files: profile hostname
 	[ -e "$(DESTDIR)/etc/profile" ] || install -v -m644 -oroot -groot profile "$(DESTDIR)/etc/profile"

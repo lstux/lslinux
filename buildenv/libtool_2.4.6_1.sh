@@ -2,6 +2,7 @@
 SRCLINK=https://ftp.gnu.org/gnu/libtool/libtool-{{version}}.tar.xz
 HOMEPAGE=https://www.gnu.org/software/libtool/
 DESCRIPTION="generic library support script"
+SECTION=devtools
 DEVPKG=true
 DOCPKG=true
 BUILD_DEPENDS=""

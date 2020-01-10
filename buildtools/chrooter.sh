@@ -1,6 +1,6 @@
 #!/bin/sh
 CHROOTDIR=""
-CHROOTSHELL="/bin/sh"
+CHROOTSHELL="/bin/bash"
 VERBOSE=0
 VERBOSEOPT=""
 CLEANONLY=false
@@ -13,7 +13,7 @@ usage() {
   printf "  Mount proc/sys and dev before chrooting to chroot_dir\n"
   printf "  and umount when leaving\n"
   printf "options :\n"
-  printf "  -s shell : specify shell to use in chroot (default: /bin/sh)\n"
+  printf "  -s shell : specify shell to use in chroot (default: ${CHROOTSHELL})\n"
   printf "  -v       : be verbose\n"
   printf "  -h       : show this help message\n"
   exit 1
@@ -57,7 +57,8 @@ doumounts() {
 
 [ "$(id -un)" = "root" ] || error "this script must be run with root privileges" 1
 
-while getopts cvkh opt; do case "${opt}" in
+while getopts s:cvkh opt; do case "${opt}" in
+  s) CHROOTSHELL="${OPTARG}";;
   c) CLEANONLY=true;;
   v) VERBOSE=$(expr ${VERBOSE} + 1); VERBOSEOPT="-v";;
   k) KEEPMOUNTS=true;;

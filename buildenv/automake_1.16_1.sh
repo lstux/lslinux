@@ -2,6 +2,7 @@
 SRCLINK=https://ftp.gnu.org/gnu/automake/automake-{{version}}.tar.xz
 HOMEPAGE=https://www.gnu.org/software/automake/
 DESCRIPTION="automatically generates Makefile.in"
+SECTION=devtools
 DOCPKG=true
 BUILD_DEPENDS="autoconf"
 DEPENDS="autoconf"

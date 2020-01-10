@@ -99,7 +99,7 @@ tar xJpf "${INSTALLDIR}/portage-latest.tar.xz" -C "${INSTALLDIR}/gentoo-${GENTOO
 
 diff /etc/resolv.conf "${INSTALLDIR}/etc/resolv.conf" >/dev/null 2>&1 && cp -v -L /etc/resolv.conf "${INSTALLDIR}/etc/resolv.conf"
 
-install -v -d -m755 "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"lslinux-build/{sources,distfiles,buildscripts} >&5 2>&6
+install -v -d -m755 "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/"lslinux-build >&5 2>&6
 
 echo -e "export PS1=\"gentoo-uClibc-ng \${PS1}\"" >> "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/etc/bash/bashrc"
 echo -e "alias ls=\"ls --color\"" >> "${INSTALLDIR}/gentoo-${GENTOO_ARCH}-uclibc/etc/bash/bashrc"

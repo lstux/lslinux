@@ -244,19 +244,21 @@ dokconf_unset() {
 }
 
 dokconf() {
-  local config="${SOURCESDIR}/.config" target="silentoldconfig"
-  if [ -e "${1}" ]; then
-    install -v "${1}" "${config}"
+  local config="${SOURCESDIR}/.config" target="${1}" e
+  if [ -e "${target}" ]; then
+    install -v "${target}" "${config}"
   else
-    make -C "${SOURCESDIR}" "${1}"
+    make -C "${SOURCESDIR}" "${target}"
   fi
+  e=$?
   shift
+  [ -e "${target}" -o -n "${1}" ] || return ${e}
   local action=set k
   for k in "$@"; do case "${k}" in
     set|unset) action="${k}";;
     *)         eval dokconf_${action} \"${k}\";;
   esac; done
-  ${DEBUG} && target="oldconfig"
+  ${DEBUG} && target="oldconfig" || target=silentoldconfig
   make -C "${SOURCESDIR}" ${target}
 }
 
@@ -565,7 +567,7 @@ fi
 
 ### Create packages archives
 for sub in ${SUBPACKAGES}; do pkgcreate "${sub}"; done
-pkgcreate "${sub}"
+pkgcreate
 
 ### Remove installdirs and builddir if requested
 for sub in ${SUBPACKAGES}; do rm -rf "${LSL_DESTDIR}/${PKG_NAME}-${sub}-${PKG_VERSION}-${PKG_REVISION}"; done
